@@ -27,12 +27,14 @@
   "devDependencies": {
     "babel-core": "^6.26.3",
     "babel-preset-env": "^1.7.0",
+    "gh-pages": "^3.2.3",
     "parcel": "^2.0.1"
   },
   "homepage": "https://theanam.github.io/webaudio-oscilloscope/",
   "scripts": {
     "run-example": "parcel example/index.html --dist-dir temp-example",
-    "build-example": "parcel build example/index.html --dist-dir dist-example --public-url /webaudio-oscilloscope",
+    "build-example": "parcel build example/index.html --dist-dir dist-example --public-url /tongarten",
+    "deploy-example": "gh-pages -d dist-example",
     "build": "parcel build index.js",
     "watch": "parcel watch index.js",
     "publish-page": "yarn build-example && npx gh-pages --dist-dir dist-example && rm -rf dist-example"
@@ -41,5 +43,8 @@
     "presets": [
       "env"
     ]
+  },
+  "dependencies": {
+    "fabric": "^4.6.0"
   }
 }

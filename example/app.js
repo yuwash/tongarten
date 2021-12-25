@@ -1,27 +1,151 @@
-import {MediaStreamOscilloscope, getUserMedia, Renderer} from "../dist/index";
+import {MediaStreamOscilloscope, getUserMedia} from "../dist/index";
+import {fabric} from "fabric";
 
 let stats = document.querySelector(".status");
 let cvs   = document.querySelector(".cvs");
 
-class FancyGraphRenderer extends Renderer{
+function smooth(value, prevValue){
+    return 0.8*value + (1-0.8)*(prevValue ?? value);
+}
+class AutoScale{
+    // initial candidate values purposefully large so that they’re
+    // immediately corrected
+    offsetCandidate = 1000;
+    offsetWeight = 0;
+    factorCandidate = 0.1;
+    factorWeight = 0;
+    maxFactor = 0.1;
+    minWeight = 5;
+    finalMinWeight = 500;
+    minWeightIncBase = 2;
+    // minWeight is increased by this factor every time it’s reached
+    // until it reaches finalMinWeight
+
+    constructor(initOffset = 0, initFactor = 1){
+        this.offset = initOffset;
+        this.factor = initFactor;
+    }
+
+    update_and_scale(value){
+        if(value < this.offsetCandidate){
+            const diffOut = this.offsetCandidate - value;
+            this.offsetCandidate = value;
+            this.offsetWeight += 1;
+            this.factorCandidate /= 1+(this.factorCandidate*diffOut)
+            if(value < this.offset){
+                // it’s always offset < offsetCandidate
+                this.factor /= 1+(this.factor*(this.offset - value))
+                this.offset = this.offsetCandidate;
+            }
+        }else if(this.minWeight <= this.offsetWeight){
+            this.factor /= 1-(
+                this.factor*(this.offsetCandidate - this.offset)
+            );
+            this.offset = this.offsetCandidate;
+            const diffIn = value - this.offsetCandidate;
+            this.offsetCandidate = value;
+            this.offsetWeight = 1;
+            this.factorCandidate /= 1-(this.factorCandidate*diffIn);
+        }else{
+            this.offsetWeight += 1;
+        }
+        const candidateScaledValue = this.factorCandidate*(
+            value - this.offset
+        );
+        if(1 < candidateScaledValue){
+            this.factorCandidate /= candidateScaledValue;
+            if(1 < this.scale(value)){
+                // it’s always factor < factorCandidate
+                this.factor = this.factorCandidate;
+            }
+        }
+        if(this.minWeight <= this.factorWeight){
+            this.factor = this.factorCandidate;
+            this.factorCandidate = 1/(value - this.offset);
+            this.factorWeight = 1;
+            this.minWeight = Math.min(
+                this.finalMinWeight, this.minWeight*this.minWeightIncBase
+            );
+        }else{
+            this.factorWeight += 1;
+        }
+        if(!this.factorCandidate || this.maxFactor < this.factorCandidate){
+            this.factorCandidate = this.maxFactor;
+        }
+        if(!this.factor || this.maxFactor < this.factor){
+            this.factor = (this.factor === 0) ? 1 : this.maxFactor;
+        }
+        return this.scale(value);
+    }
+
+    scale(value){
+        return this.factor*(value - this.offset);
+    }
+}
+class DuckRenderer{
+    ducks = undefined;
+    background = undefined;
+    oscDataAutoScale = undefined;
+    ducksCount = 5;
+    constructor(canvasElement){
+        let {width = 300, height = 150} = canvasElement;
+        this.width = width;
+        this.height = height;
+        this.cvsFabric = new fabric.Canvas(canvasElement);
+        this.oscDataAutoScale = new AutoScale(0, 1/128.0);
+        this.background = new fabric.Rect({
+            top: 0,
+            left: 0,
+            width: this.width,
+            height: this.height,
+            fill: "#afa"
+        });
+        this.ducks = Array(this.ducksCount).fill(undefined);
+        this.setDucks("🦆");
+    }
+    init(){
+        this.cvsFabric.add(this.background);
+    }
+    osc(data){
+        // I don’t know why but the unit is different (apparently not anymore)
+        const heightPx = this.height;//*8/21;
+        const widthPx = this.width;
+        let nextDuckIndex = 0;
+        for(let i=0; i < data.length; i++){
+            let x = i * (widthPx/data.length);
+            const shiftX = widthPx/this.ducksCount;
+            const duckIndex = Math.floor(x / shiftX);
+            if(nextDuckIndex <= duckIndex){
+                const v = this.oscDataAutoScale.update_and_scale(data[i]);
+                const duckText = this.ducks[duckIndex];
+                const fontSize = smooth(72*v, duckText.fontSize);
+                duckText.set({
+                    left: x,
+                    top: smooth((1-v)*heightPx, duckText.top),
+                    fontSize: fontSize,
+                });
+                duckText.setCoords();
+                duckText.bringToFront();
+                nextDuckIndex += 1;
+            }
+        }
+    }
     primer(){
-        this.cctx.strokeStyle = "#444";
-        this.cctx.fillRect(0,0,this.width,this.height);
-        this.cctx.beginPath();
-        for(let i=0; i<this.width; i+=10){
-            this.cctx.moveTo(i,0);
-            this.cctx.lineTo(i,this.height);
-        }
-        for(let j=0; j<this.height; j+=10){
-            this.cctx.moveTo(0,j);
-            this.cctx.lineTo(this.width,j);
-        }
-        this.cctx.stroke();
-        this.cctx.strokeStyle = this.strokeStyle;
+    }
+    reset(){
+        // this.cvsFabric.clear();
+    }
+    setDucks(text){
+        this.ducks.forEach((prevDuck, i) => {
+            prevDuck && this.cvsFabric.remove(prevDuck);
+            const duckText = new fabric.Text(text);
+            this.ducks[i] = duckText;
+            this.cvsFabric.add(duckText);
+        });
     }
 }
 function startOsc(){
-    const renderer = new FancyGraphRenderer(cvs);
+    const renderer = new DuckRenderer(cvs);
     getUserMedia({audio: true})
         .then(stream=>{
             if(!stream) {
@@ -42,6 +166,18 @@ function startOsc(){
             document.querySelector(".btn.reset").addEventListener("click",()=>{
                 stats.innerHTML = "Oscilloscope Reset";
                 osc.reset();
+            });
+            document.querySelector(".btn.duck").addEventListener("click",()=>{
+                stats.innerHTML = "Oscilloscope switch to duck";
+                renderer.setDucks("🦆");
+            });
+            document.querySelector(".btn.swan").addEventListener("click",()=>{
+                stats.innerHTML = "Oscilloscope switch to swan";
+                renderer.setDucks("🦢");
+            });
+            document.querySelector(".btn.bird").addEventListener("click",()=>{
+                stats.innerHTML = "Oscilloscope switch to bird";
+                renderer.setDucks("🐦");
             });
         });
 }
