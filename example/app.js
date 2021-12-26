@@ -163,6 +163,7 @@ class DuckRenderer{
     }
 }
 function startOsc(){
+    document.querySelector(".start").removeEventListener("click",startOsc);
     const renderer = new DuckRenderer(cvs);
     const fft = 32;  // the minimum; sufficient for the “ducks” rendering
     getUserMedia({audio: true})
@@ -175,9 +176,16 @@ function startOsc(){
             }
             stats.classList.add("success");
             stats.classList.remove("error");
-            stats.innerHTML = "Listening to your microphone, Try saying something";
+            const startMessage = (
+                "Listening to your microphone, Try saying something"
+            );
+            stats.innerHTML = startMessage;
             let osc = new MediaStreamOscilloscope(stream, renderer, null, fft);
             osc.start();
+            document.querySelector(".start").addEventListener("click",()=>{
+                stats.innerHTML = startMessage;
+                osc.start();
+            });
             document.querySelector(".btn.pause").addEventListener("click",()=>{
                 stats.innerHTML = "Oscilloscope Paused";
                 osc.pause();
