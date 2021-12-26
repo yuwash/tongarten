@@ -4,6 +4,9 @@ import {fabric} from "fabric";
 let stats = document.querySelector(".status");
 let cvs   = document.querySelector(".cvs");
 
+function smooth(value, prevValue, weight = 0.5){
+    return weight*value + (1-weight)*(prevValue ?? value);
+}
 class AutoScale{
     // initial candidate values purposefully large so that they’re
     // immediately corrected
@@ -83,6 +86,7 @@ class DuckRenderer{
     ducks = undefined;
     background = undefined;
     oscDataAutoScale = undefined;
+    oscFrequencyDataAutoScale = undefined;
     ducksCount = 5;
     constructor(canvasElement){
         let {width = 300, height = 150} = canvasElement;
@@ -90,12 +94,15 @@ class DuckRenderer{
         this.height = height;
         this.cvsFabric = new fabric.Canvas(canvasElement);
         this.oscDataAutoScale = new AutoScale(0, 1/64);
+        this.oscFrequencyDataAutoScale = new AutoScale(0, 1/128);
+        this.smoothFrequency = undefined;
         this.background = new fabric.Rect({
             top: 0,
             left: 0,
             width: this.width,
             height: this.height,
-            fill: "#afa"
+            fill: "#afa",
+            selectable: false
         });
         this.ducks = Array(this.ducksCount).fill(undefined);
         this.setDucks("🦆");
@@ -103,17 +110,27 @@ class DuckRenderer{
     init(){
         this.cvsFabric.add(this.background);
     }
-    osc(data){
+    osc(data, frequencyData){
         // I don’t know why but the unit is different (apparently not anymore)
         const heightPx = this.height;//*8/21;
         const widthPx = this.width;
+        const [frequencySum, frequencyWeightedSum] = frequencyData.reduce(
+            ([sum, wsum], val, i) => [sum + val, wsum + i*val], [0, 0]
+        )
+        const frequency = (
+            frequencySum ? this.oscFrequencyDataAutoScale.update_and_scale(
+                frequencyWeightedSum / frequencySum
+            ) : null
+        );
+        this.smoothFrequency = smooth(frequency, this.smoothFrequency, 0.1);
+        this.setBackgroundFill(`hsl(${255*this.smoothFrequency}, 100%, 67%)`);
         let nextDuckIndex = 0;
         for(let i=0; i < data.length; i++){
             let x = i * (widthPx/data.length);
             const shiftX = widthPx/this.ducksCount;
             const duckIndex = Math.floor(x / shiftX);
             if(nextDuckIndex <= duckIndex){
-                const normalized = Math.pow(data[i] - 128, 2);
+                const normalized = data[i] ? Math.abs(data[i] - 128) : 0;
                 const v = this.oscDataAutoScale.update_and_scale(normalized);
                 const duckText = this.ducks[duckIndex];
                 const fontSize = 72*v;
@@ -136,10 +153,13 @@ class DuckRenderer{
     setDucks(text){
         this.ducks.forEach((prevDuck, i) => {
             prevDuck && this.cvsFabric.remove(prevDuck);
-            const duckText = new fabric.Text(text);
+            const duckText = new fabric.Text(text, {selectable: false});
             this.ducks[i] = duckText;
             this.cvsFabric.add(duckText);
         });
+    }
+    setBackgroundFill(fill){
+        this.background.set({fill: fill});
     }
 }
 function startOsc(){
