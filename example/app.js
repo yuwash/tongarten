@@ -12,9 +12,9 @@ class AutoScale{
     // immediately corrected
     offsetCandidate = 1000;
     offsetWeight = 0;
-    factorCandidate = 0.1;
+    factorCandidate = 10;
     factorWeight = 0;
-    maxFactor = 0.1;
+    maxFactor = 10;
     minWeight = 5;
     finalMinWeight = 500;
     minWeightIncBase = 2;
@@ -73,7 +73,9 @@ class AutoScale{
             this.factorCandidate = this.maxFactor;
         }
         if(!this.factor || this.maxFactor < this.factor){
-            this.factor = (this.factor === 0) ? 1 : this.maxFactor;
+            this.factor = (this.factor === 0) ? (
+                (value < 1) ? 1 : 1/value
+            ) : this.maxFactor;
         }
         return this.scale(value);
     }
@@ -88,10 +90,12 @@ class DuckRenderer{
     oscDataAutoScale = undefined;
     oscFrequencyDataAutoScale = undefined;
     ducksCount = 5;
+    tickFactor = 0.1;
     constructor(canvasElement){
         let {width = 300, height = 150} = canvasElement;
         this.width = width;
         this.height = height;
+        this.maxFontSize = Math.min(width/this.ducksCount, height/2);
         this.cvsFabric = new fabric.Canvas(canvasElement);
         this.oscDataAutoScale = new AutoScale(0, 1/64);
         this.oscFrequencyDataAutoScale = new AutoScale(0, 1/128);
@@ -104,16 +108,18 @@ class DuckRenderer{
             fill: "#afa",
             selectable: false
         });
+        this.cvsFabric.add(this.background);
         this.ducks = Array(this.ducksCount).fill(undefined);
         this.setDucks("🦆");
+        this.tick = 0;  // ticks faster on high frequency
     }
     init(){
-        this.cvsFabric.add(this.background);
     }
     osc(data, frequencyData){
         // I don’t know why but the unit is different (apparently not anymore)
         const heightPx = this.height;//*8/21;
         const widthPx = this.width;
+        const shiftX = widthPx/this.ducksCount;
         const [frequencySum, frequencyWeightedSum] = frequencyData.reduce(
             ([sum, wsum], val, i) => [sum + val, wsum + i*val], [0, 0]
         )
@@ -124,18 +130,19 @@ class DuckRenderer{
         );
         this.smoothFrequency = smooth(frequency, this.smoothFrequency, 0.1);
         this.setBackgroundFill(`hsl(${255*this.smoothFrequency}, 100%, 67%)`);
+        this.tick += this.smoothFrequency * this.tickFactor;
+        const periodicShiftX = shiftX * (Math.sin(this.tick) + 1)/2;
         let nextDuckIndex = 0;
         for(let i=0; i < data.length; i++){
             let x = i * (widthPx/data.length);
-            const shiftX = widthPx/this.ducksCount;
             const duckIndex = Math.floor(x / shiftX);
             if(nextDuckIndex <= duckIndex){
                 const normalized = data[i] ? Math.abs(data[i] - 128) : 0;
                 const v = this.oscDataAutoScale.update_and_scale(normalized);
                 const duckText = this.ducks[duckIndex];
-                const fontSize = 72*v;
+                const fontSize = this.maxFontSize*v;
                 duckText.set({
-                    left: x,
+                    left: x + periodicShiftX - fontSize / 2,
                     top: (1-v)*heightPx,
                     fontSize: fontSize,
                 });
