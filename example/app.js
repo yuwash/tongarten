@@ -4,9 +4,6 @@ import {fabric} from "fabric";
 let stats = document.querySelector(".status");
 let cvs   = document.querySelector(".cvs");
 
-function smooth(value, prevValue){
-    return 0.8*value + (1-0.8)*(prevValue ?? value);
-}
 class AutoScale{
     // initial candidate values purposefully large so that they’re
     // immediately corrected
@@ -92,7 +89,7 @@ class DuckRenderer{
         this.width = width;
         this.height = height;
         this.cvsFabric = new fabric.Canvas(canvasElement);
-        this.oscDataAutoScale = new AutoScale(0, 1/128.0);
+        this.oscDataAutoScale = new AutoScale(0, 1/64);
         this.background = new fabric.Rect({
             top: 0,
             left: 0,
@@ -116,12 +113,13 @@ class DuckRenderer{
             const shiftX = widthPx/this.ducksCount;
             const duckIndex = Math.floor(x / shiftX);
             if(nextDuckIndex <= duckIndex){
-                const v = this.oscDataAutoScale.update_and_scale(data[i]);
+                const normalized = Math.pow(data[i] - 128, 2);
+                const v = this.oscDataAutoScale.update_and_scale(normalized);
                 const duckText = this.ducks[duckIndex];
-                const fontSize = smooth(72*v, duckText.fontSize);
+                const fontSize = 72*v;
                 duckText.set({
                     left: x,
-                    top: smooth((1-v)*heightPx, duckText.top),
+                    top: (1-v)*heightPx,
                     fontSize: fontSize,
                 });
                 duckText.setCoords();
@@ -146,6 +144,7 @@ class DuckRenderer{
 }
 function startOsc(){
     const renderer = new DuckRenderer(cvs);
+    const fft = 32;  // the minimum; sufficient for the “ducks” rendering
     getUserMedia({audio: true})
         .then(stream=>{
             if(!stream) {
@@ -157,7 +156,7 @@ function startOsc(){
             stats.classList.add("success");
             stats.classList.remove("error");
             stats.innerHTML = "Listening to your microphone, Try saying something";
-            let osc = new MediaStreamOscilloscope(stream, renderer, null, 2048);
+            let osc = new MediaStreamOscilloscope(stream, renderer, null, fft);
             osc.start();
             document.querySelector(".btn.pause").addEventListener("click",()=>{
                 stats.innerHTML = "Oscilloscope Paused";
