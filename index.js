@@ -12,17 +12,20 @@ function Oscilloscope(audioContext, audioSource, renderer, audioDest = null, ana
         this.dest   = audioDest;
         // Configure Analyzer
         this.anl.fftSize = this.FFT;
+        this.bufferLength = this.anl.frequencyBinCount;
         this.src.connect(this.anl);
         if(this.dest) this.anl.connect(this.dest);
         // Set up Canvas
         this.u8ar = new Uint8Array(this.FFT);
+        this.frequencyU8ar = new Uint8Array(this.bufferLength);
         this.renderer.init();
         this.draw = () =>{
             if(!this.paused) requestAnimationFrame(this.draw);
             this.renderer.reset();
             this.renderer.primer();
             this.anl.getByteTimeDomainData(this.u8ar);
-            this.renderer.osc(this.u8ar);
+            this.anl.getByteFrequencyData(this.frequencyU8ar);
+            this.renderer.osc(this.u8ar, this.frequencyU8ar);
         }
         this.start = () => {
             this.paused = false;
@@ -35,9 +38,10 @@ function Oscilloscope(audioContext, audioSource, renderer, audioDest = null, ana
             this.paused = true;
             requestAnimationFrame(()=>{
                 this.u8ar = new Uint8Array(this.FFT).fill(0);
+                this.frequencyU8ar = new Uint8Array(this.bufferLength).fill(0);
                 this.renderer.reset();
                 this.renderer.primer();
-                this.renderer.osc(this.u8ar);
+                this.renderer.osc(this.u8ar, this.frequencyU8ar);
             });
         }
 }
